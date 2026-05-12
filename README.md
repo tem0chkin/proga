@@ -49,9 +49,9 @@ cd proga
 ### 2. Запуск
 
 ```bash
-python 1laba.py
+python "1LABA.py"
 python -m unittest test_console -v
-python 2laba.py
+python "2LABA.py"
 python -m unittest test_gui -v
 ```
 
