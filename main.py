@@ -1,13 +1,14 @@
 """
-main.py - Точка входа для программы фиксации проезда автомобилей (Лаба 3)
+main.py - Точка входа для программы фиксации проезда автомобилей (Лаба 4)
 
 Связывает модель (model.py) и представление (view.py)
+Добавлена поддержка файлов с командами
 """
 
 import os
 from tkinter import filedialog, messagebox
 
-from model import CarPass, FileManager, Logger, DEFAULT_FILENAME
+from model import CarPass, FileManager, Logger, CommandProcessor, DEFAULT_FILENAME
 from view import MainMenu, WorkWindow
 
 
@@ -20,10 +21,8 @@ class Application:
         self.logger = Logger()
         self.work_window = None
         
-        # Загружаем данные при старте
         self._load_data()
         
-        # Создаём главное меню
         self.main_menu = MainMenu(
             on_work_click=self._open_work_window,
             on_help_click=self._open_help,
@@ -31,23 +30,19 @@ class Application:
         )
     
     def _load_data(self):
-        """Загрузка данных из файла по умолчанию"""
         if os.path.exists(self.current_file):
             self.data = FileManager.load(self.current_file)
-            self.logger.logger.info(f"Загружено {len(self.data)} записей из {self.current_file}")
+            self.logger.log_info(f"Загружено {len(self.data)} записей")
     
     def _save_data(self):
-        """Сохранение данных в текущий файл"""
         if FileManager.save(self.current_file, self.data):
             messagebox.showinfo("Успех", "Данные сохранены")
-            self.logger.logger.info(f"Сохранено {len(self.data)} записей в {self.current_file}")
             return True
         else:
             messagebox.showerror("Ошибка", "Не удалось сохранить данные")
             return False
     
     def _open_work_window(self):
-        """Открытие рабочего окна"""
         self.main_menu.hide()
         
         self.work_window = WorkWindow(
@@ -58,18 +53,17 @@ class Application:
             on_save_as=self._save_as,
             on_add=self._add_record,
             on_delete=self._delete_records,
-            on_back=self._close_work_window
+            on_back=self._close_work_window,
+            on_execute_commands=self._execute_commands_file  # НОВЫЙ callback
         )
     
     def _close_work_window(self):
-        """Закрытие рабочего окна и возврат в меню"""
         if self.work_window:
             self.work_window.destroy()
             self.work_window = None
         self.main_menu.show()
     
     def _load_from_file(self):
-        """Загрузка из выбранного файла"""
         filename = filedialog.askopenfilename(
             title="Выберите файл с данными",
             filetypes=[("Текстовые файлы", "*.txt"), ("Все файлы", "*.*")]
@@ -77,14 +71,13 @@ class Application:
         if filename:
             self.current_file = filename
             self.data = FileManager.load(self.current_file)
-            self.logger.logger.info(f"Загружено {len(self.data)} записей из {filename}")
+            self.logger.log_info(f"Загружено {len(self.data)} записей из {filename}")
             
             if self.work_window:
                 self.work_window.update_data(self.data)
                 self.work_window.status_var.set(f"Загружено: {os.path.basename(filename)}")
     
     def _save_as(self):
-        """Сохранить как..."""
         filename = filedialog.asksaveasfilename(
             title="Сохранить файл",
             defaultextension=".txt",
@@ -95,37 +88,60 @@ class Application:
             self._save_data()
     
     def _add_record(self, date_str: str, plate_str: str):
-        """Добавление новой записи"""
         new_record = CarPass(date_str, plate_str.upper())
         self.data.append(new_record)
-        self.logger.logger.info(f"Добавлена запись: {date_str}, {plate_str}")
+        self.logger.log_info(f"Добавлена запись: {date_str}, {plate_str}")
         
         if self.work_window:
             self.work_window.update_data(self.data)
             self.work_window.status_var.set(f"Добавлена запись: {date_str}")
     
     def _delete_records(self, indices: list):
-        """Удаление записей по индексам"""
         for index in sorted(indices, reverse=True):
             deleted = self.data.pop(index)
-            self.logger.logger.info(f"Удалена запись: {deleted.date}, {deleted.plate_number}")
+            self.logger.log_info(f"Удалена запись: {deleted.date}, {deleted.plate_number}")
         
         if self.work_window:
             self.work_window.update_data(self.data)
             self.work_window.status_var.set(f"Удалено записей: {len(indices)}")
     
+    def _execute_commands_file(self, filename: str):
+        """НОВЫЙ МЕТОД: выполнение команд из файла"""
+        self.data, errors = CommandProcessor.process_commands_file(
+            self.data, filename, self._on_data_changed
+        )
+        
+        if self.work_window:
+            self.work_window.update_data(self.data)
+        
+        # Показываем результат
+        if errors:
+            error_msg = "\n".join(errors[:10])  # первые 10 ошибок
+            if len(errors) > 10:
+                error_msg += f"\n... и ещё {len(errors) - 10} ошибок"
+            messagebox.showwarning("Ошибки в командах", 
+                                   f"При выполнении команд произошли ошибки:\n\n{error_msg}")
+        else:
+            messagebox.showinfo("Успех", "Все команды выполнены успешно")
+        
+        # Обновляем статус
+        if self.work_window:
+            self.work_window.status_var.set(f"Выполнены команды из {os.path.basename(filename)}")
+    
+    def _on_data_changed(self, new_data: list):
+        """Callback при изменении данных через команды"""
+        self.data = new_data
+        self.logger.log_info(f"Данные изменены через команды: {len(self.data)} записей")
+    
     def _open_help(self):
-        """Открытие окна справки"""
         from view import HelpWindow
         HelpWindow(self.main_menu)
     
     def _quit(self):
-        """Выход из программы"""
         self.main_menu.quit()
         self.main_menu.destroy()
     
     def run(self):
-        """Запуск приложения"""
         self.main_menu.mainloop()
 
 

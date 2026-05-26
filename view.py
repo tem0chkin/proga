@@ -1,5 +1,5 @@
 """
-view.py - Представление для программы фиксации проезда автомобилей
+view.py - Представление для программы фиксации проезда автомобителей
 
 Содержит все графические окна:
 - MainMenu (главное меню)
@@ -17,7 +17,7 @@ from model import CarPass, Validation, DATE_FORMAT, DATE_EXAMPLE, VALID_PLATE_LE
 
 
 # ============================================================
-# Вспомогательная функция для отображения ошибок
+# Вспомогательная функция
 # ============================================================
 
 def show_error(parent, title: str, message: str):
@@ -83,6 +83,7 @@ class MainMenu(tk.Tk):
                 fg='white',
                 font=('Arial', 11, 'bold'),
                 width=15,
+                height=1,
                 relief=tk.RAISED,
                 bd=2
             )
@@ -173,6 +174,7 @@ class HelpWindow(tk.Toplevel):
 Функции:
 • Загрузка/сохранение в файл
 • Добавление/удаление записей
+• Выполнение команд из файла (ADD, REM, SAVE)
 """
         text_area = scrolledtext.ScrolledText(info_frame, wrap=tk.WORD,
                                                height=10, font=('Courier', 10))
@@ -281,7 +283,8 @@ class WorkWindow(tk.Toplevel):
     
     def __init__(self, parent, data: List[CarPass], 
                  on_load: Callable, on_save: Callable, on_save_as: Callable,
-                 on_add: Callable, on_delete: Callable, on_back: Callable):
+                 on_add: Callable, on_delete: Callable, on_back: Callable,
+                 on_execute_commands: Callable = None):
         """
         Args:
             parent: родительское окно
@@ -292,6 +295,7 @@ class WorkWindow(tk.Toplevel):
             on_add: callback для добавления
             on_delete: callback для удаления (принимает список индексов)
             on_back: callback для возврата
+            on_execute_commands: callback для выполнения команд из файла (лаба 4)
         """
         super().__init__(parent)
         self.parent = parent
@@ -301,9 +305,10 @@ class WorkWindow(tk.Toplevel):
         self.on_add = on_add
         self.on_delete = on_delete
         self.on_back = on_back
+        self.on_execute_commands = on_execute_commands
         
         self.title("Фиксация проезда автомобилей")
-        self.geometry("700x400")
+        self.geometry("750x450")
         self.data = data
         self.status_var = tk.StringVar(value="Готов")
         
@@ -318,53 +323,81 @@ class WorkWindow(tk.Toplevel):
         self.focus_force()
     
     def _create_menu(self):
+        """Создание главного меню окна"""
         menubar = tk.Menu(self)
         file_menu = tk.Menu(menubar, tearoff=0)
         file_menu.add_command(label="Открыть файл", command=self.on_load)
         file_menu.add_command(label="Сохранить", command=self.on_save)
         file_menu.add_command(label="Сохранить как...", command=self.on_save_as)
         file_menu.add_separator()
+        file_menu.add_command(label="Выполнить команды...", command=self._show_commands_dialog)
+        file_menu.add_separator()
         file_menu.add_command(label="Закрыть окно", command=self._go_back)
         menubar.add_cascade(label="Файл", menu=file_menu)
+        
+        # Меню Команды (лаба 4)
+        commands_menu = tk.Menu(menubar, tearoff=0)
+        commands_menu.add_command(label="Выполнить из файла...", command=self._show_commands_dialog)
+        menubar.add_cascade(label="Команды", menu=commands_menu)
+        
         self.config(menu=menubar)
     
     def _create_toolbar(self):
+        """Создание панели инструментов"""
         btn_frame = ttk.Frame(self)
         btn_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
         
         ttk.Button(btn_frame, text="Добавить", command=self._show_add_dialog).pack(side=tk.LEFT, padx=2)
         ttk.Button(btn_frame, text="Удалить", command=self._delete_selected).pack(side=tk.LEFT, padx=2)
+        
+        # Кнопка выполнения команд (лаба 4)
+        if self.on_execute_commands:
+            ttk.Button(btn_frame, text="Выполнить команды", command=self._show_commands_dialog).pack(side=tk.LEFT, padx=2)
+        
         ttk.Button(btn_frame, text="← Назад", command=self._go_back).pack(side=tk.LEFT, padx=20)
     
     def _create_table(self):
+        """Создание таблицы для отображения данных"""
         frame = ttk.Frame(self)
         frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        self.tree = ttk.Treeview(frame, show="headings", columns=self.COLUMNS)
+        # Создаём Treeview с прокруткой
+        self.tree = ttk.Treeview(frame, show="headings", columns=self.COLUMNS, height=15)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
+        # Настройка колонок
         for i, col in enumerate(self.COLUMNS):
             self.tree.heading(col, text=col)
-            width = 120 if i == 0 else 250
+            width = 120 if i == 0 else 300
             anchor = 'center' if i == 0 else 'w'
             self.tree.column(col, width=width, anchor=anchor)
         
-        scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=self.tree.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.tree.configure(yscrollcommand=scrollbar.set)
+        # Вертикальная прокрутка
+        scrollbar_v = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=self.tree.yview)
+        scrollbar_v.pack(side=tk.RIGHT, fill=tk.Y)
+        self.tree.configure(yscrollcommand=scrollbar_v.set)
+        
+        # Горизонтальная прокрутка (если нужно)
+        scrollbar_h = ttk.Scrollbar(frame, orient=tk.HORIZONTAL, command=self.tree.xview)
+        scrollbar_h.pack(side=tk.BOTTOM, fill=tk.X)
+        self.tree.configure(xscrollcommand=scrollbar_h.set)
     
     def _create_status_bar(self):
+        """Создание строки статуса"""
         status_bar = ttk.Label(self, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
         status_bar.pack(side=tk.BOTTOM, fill=tk.X)
     
     def _refresh_table(self):
         """Обновление таблицы из данных"""
+        # Очищаем таблицу
         for row in self.tree.get_children():
             self.tree.delete(row)
         
+        # Заполняем заново
         for item in self.data:
             self.tree.insert("", tk.END, values=(item.date, item.plate_number))
         
+        # Обновляем статус
         self.status_var.set(f"Всего записей: {len(self.data)}")
     
     def update_data(self, new_data: List[CarPass]):
@@ -373,23 +406,42 @@ class WorkWindow(tk.Toplevel):
         self._refresh_table()
     
     def _go_back(self):
+        """Возврат в главное меню"""
         self.on_back()
     
     def _delete_selected(self):
         """Удаление выбранных записей"""
         selected = self.tree.selection()
         if not selected:
-            messagebox.showinfo("Информация", "Ничего не выбрано")
+            messagebox.showinfo("Информация", "Ничего не выбрано", parent=self)
             return
         
         indices = [self.tree.index(item) for item in selected]
         
-        if messagebox.askyesno("Подтверждение", f"Удалить {len(selected)} запись(и)?"):
+        if messagebox.askyesno("Подтверждение", f"Удалить {len(selected)} запись(и)?", parent=self):
             self.on_delete(indices)
     
     def _show_add_dialog(self):
+        """Показать диалог добавления"""
         AddDialog(self, self._on_add_callback)
     
     def _on_add_callback(self, date_str: str, plate_str: str):
         """Callback после добавления записи"""
         self.on_add(date_str, plate_str)
+    
+    def _show_commands_dialog(self):
+        """Показать диалог выбора файла с командами (лаба 4)"""
+        if not self.on_execute_commands:
+            messagebox.showinfo("Информация", "Функция выполнения команд недоступна", parent=self)
+            return
+        
+        filename = filedialog.askopenfilename(
+            title="Выберите файл с командами",
+            filetypes=[("Текстовые файлы", "*.txt"), ("Все файлы", "*.*")],
+            parent=self
+        )
+        
+        if filename:
+            self.status_var.set(f"Выполняются команды из {os.path.basename(filename)}...")
+            self.update()  # Принудительно обновляем интерфейс
+            self.on_execute_commands(filename)
